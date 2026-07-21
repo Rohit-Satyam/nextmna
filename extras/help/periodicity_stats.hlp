@@ -1,0 +1,12 @@
+periodicity_stats: Statistics on Nucleosome periodicity
+Usage:(runNuclDyn | docker run [IMAGE]) periodicity_stats  --input {gff} --genome {gff} --out_genes {csv} --out_gw {csv}
+
+--input
+  Nucleosome calls in GFF format as obtained from periodicity
+--genome
+  Gene positions from the reference genome. GFF Format
+--out_genes
+  Output file containing statistics of all calculations for each gene. CSV format 
+--out_gw
+  Output file containing table of genome wide statistics. CSV format
+ 

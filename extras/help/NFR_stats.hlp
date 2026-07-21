@@ -1,0 +1,9 @@
+NFR_stats:        Nucleosome Free Regions statistics
+Usage: (runNuclDyn|docker run [IMAGE])  NFR_stats --input {gff} --out_gw {csv} --genome {gff}
+
+--input
+  Nucleosome calls in GFF format as obtained from NFR
+--genome
+  Gene positions from the reference genome. GFF Format
+--out_gw
+  Output file containing table of genome wide statistics. CSV format

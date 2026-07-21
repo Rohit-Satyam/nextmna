@@ -1,0 +1,51 @@
+NucleR is a non-parametric method used to determine the positions of the nucleosomes on a MNase-seq experiment.
+
+Starting from mapped next-generation sequencing (NGS), some pre-processing is first applied to the reads, like a correction of strand bias (in the case of single-end sequencing) or a trimming of the reads to remark the position of the dyad (in the case of paired-end sequencing). Then, the coverage for those peaks is computed.
+
+After that, the NucleR pipeline performs a profile cleaning based on Fourier analysis, which both smothes the signal and cleans the distortions in the coverage peaks. By tranforming the original coverage profile into the Fourier Space using FFT, one can analyze the contribution of every frequency to the original signal. High frequencies are usually echoes of lower frequencies and sources of noise. In the case of NucleR, a small number of components are chosen (typically a 2%) and the rest are removed before performing the inverse FFT.
+
+The following step is the detection of nucleosome dyads, which is done by a simple local maxima search. Nucleosome calls are determined by selecting the surrounding bases around the dyad position and some calls are merged if they overlap enough.
+
+Finally, the nucleosome calls are scored based on the height and sharpness of the peak. These height and width scores also allow to classify large and sharp peaks as well-positioned nucleosomes and short and wide peaks as fuzzy nucleosomes.
+
+
+Usage: (runNuclDyn|docker run [IMAGE]) --input {RData} --output {gff} --type (single|PAIRED) --width {int} --minoverlap {int} [--dyad_length {int} --thresholdPercentage {double} --hthresh {double} --wthresh {double} --pcKeepComp {double} --fdrOverAmp {double} --components {int} --fragmentLen {int} --trim {int} --threshold {logical} --thresholdValue {int} --chr STR --start {int} --end {int} ]
+
+        --input:
+                Input BAM file (RData format)
+        --output:
+                Nucleosome calls in GFF format. Annotations: Score_weight (0-1), Score_height (0-1), class (W, F, uncertain)
+        --type
+                Type of sequence data: single|paired
+        --width:
+                Width given to nucleosome calls previous to merging (bp). Default 147
+        --minoverlap:
+                Minimum number of overlapping base pairs in two nucleosome calls for them to be merged into one (bp).
+        --dyad_length:
+                Length of the reads that should be used for the nucleosome calling to define the dyad of the nucleosomes, keeping that number of bases around the center of   each fragment (bp). Optional. Default 50 bp.
+        --hthresh:
+                Height threshold (between 0 and 1) to classify (in combination with width threshold) a nucleosome as either fuzzy or well-positioned according to the number of reads in the dyad of the nucleosome call. Nucleosomes below this value will be defined as fuzzy. Optional, default 0.4.
+        --wthresh:
+                Width threshold (between 0 and 1) to classify (in combination with height threshold) a nucleosome as either fuzzy or well-positioned according to the disperion of the reads around the dyad. Nucleosomes below this value (that is, nucleosome calls not sharp enough) will be defined as fuzzy. Optional, default 0.4
+        --pcKeepComp
+                Parameter used in the coverage smoothing when Fourier transformation is applied. Number of components to select with respect to the total size of the sample. Allowed values are numeric (in range 0:1) for manual setting, or auto for automatic detection. Optional, default 0.02.
+        --fdrOverAmp
+                Threshold to filter over-amplified reads , as defined in filterDuplReads function of htSetqTools R package. Optional, default 0.05.
+        --components
+                Number of negative binomials that will be used to filter duplicated reads, as defined in filterDuplReads function of htSetqTools R package. Optional, default 1.
+        --fragmentLen
+                Fragment Length (bp). Optional, default 170.
+        --trim
+                Number of basepairs to keep from each read (or to extend in case it is larger than the read width). Optional, default 50
+        --threshold
+                 Threshold to filter out which nucleosome calls are reported as significant enough. It can be supplied as either an absolute value (--thresholdValue) or as a relative value expressed as a percentage (--thresholdPercentage). If set to TRUE, the percentage value is considered. If set to FALSE, the absolute value does. Optional, default TRUE.
+        --thresholdValue
+                 Absolute value to filter out nucleosome calls. It is the minimum number of reads (coverage) in a nucleosome call expressed as reads per million of mapped reads. Optional, default 10.
+        --thresholdPercentage:
+                Percentile of coverage in the experiment used as threshold to filter out nucleosome calls (i.e., '25%' would mean that only peaks with coverage in the 1st quantile would be considered). Optional, default 35(%)
+        --chr
+                Chromosome to consider for the analysis in the given input file. By default, all the genomic range is considered. Optional.
+        --start
+                Start genomic position to consider for the analysis in the given input file. By default, all the genomic range is considered. Optional.
+        --end
+                End genomic position to consider for the analysis in the given input file. By default, all the genomic range is considered. Optional.

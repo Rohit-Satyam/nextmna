@@ -1,0 +1,13 @@
+txstart_stats:    TSS and TTS statistics
+Usage: (runNuclDyn|docker run [IMAGE]) txstart_stats --input {gff} --genome {gff} --out_genes {csv} --out_gw {png} --out_gw2 {png}
+
+--input
+  Nucleosome calls in GFF format as obtained from txstart
+--genome
+  Gene positions from the reference genome. GFF Format
+--out_genes
+  Output file containing statistics of all calculations for each gene. CSV format 
+--out_gw
+  Output file containing table of genome wide statistics. PNG format
+--out_gw2
+  Output file containing table of genome wide statistics. PNG format

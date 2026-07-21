@@ -1,0 +1,277 @@
+---
+title: "DANPOS3 differential nucleosome analysis"
+author: ""
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+params:
+  out_dir: "final_results_snfl2"
+  reference_sample: "i24"
+  slope_at_cutoff: 1
+  plot_cutoff: true
+  save_cutoff_plots: true
+  write_bed_files: true
+---
+
+# Purpose
+
+This workflow identifies nucleosomes with large changes in occupancy, fuzziness,
+and position. A cutoff is calculated from one reference sample and is then applied
+to every supplied DANPOS3 result file.
+
+Edit only the named `files` vector in the **Input files** section to analyse a new
+set of files. The names of the vector become sample labels in the output filenames.
+
+# Dependencies
+
+```{r setup, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(tidyverse)
+library(plyranges)
+library(ggpubr)
+```
+
+# Functions
+
+```{r functions}
+# Read a DANPOS3 result table and standardise commonly used columns.
+set.seed(1425)
+read_nuc_file <- function(file) {
+  nucs <- readr::read_tsv(
+    file = file,
+    na = c("", "NA", "NaN", "Inf", "-Inf"),
+    trim_ws = TRUE,
+    show_col_types = FALSE,
+    progress = FALSE
+  )
+
+  nucs <- nucs %>%
+    mutate(
+      start = suppressWarnings(as.integer(start)),
+      end = suppressWarnings(as.integer(end))
+    )
+  nucs
+}
+
+# can be downloaded via GEO or found in the pipeline results.
+nucs_i24 <- read_nuc_file("/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/24hpi_results_v52/04_differential_nucleosome_positioning/results/adjustedFDR/24hpi_iKO-24hpi_noKO.positions.FDR_corrected.xls")
+
+nucs_i0 <- read_nuc_file("/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/0hpi_results_v52/04_differential_nucleosome_positioning/results/adjustedFDR/0hpi_iKO-0hpi_noKO.positions.FDR_corrected.xls")
+
+
+# Find the first ranked position where the spline derivative exceeds the threshold.
+# The default return value remains a numeric cutoff so existing code can continue to
+# use occCutOff, fuzzCutOff, and shiftCutOff directly.
+get_high_var_nucs <- function(ranked_dat,
+                              slope_at_cutoff = 1,
+                              plot_cutoff = TRUE,
+                              return_details = FALSE, shift=FALSE) {
+  
+  if(shift){
+    fitx <- smooth.spline(
+      x = ranked_dat$fdr_rank,
+      y = ranked_dat$norm_fdr,spar = 0.8
+    )
+  } else {
+    fitx <- smooth.spline(
+      x = ranked_dat$fdr_rank,
+      y = ranked_dat$norm_fdr
+    )
+  }
+  
+  f1 <- predict(
+    fitx,
+    x = ranked_dat$fdr_rank,
+    deriv = 1
+  )
+  
+  # Find the cutoff position where the slope is > slope_at_cutoff
+  slope_above_cutoff <- which(f1$y > slope_at_cutoff)
+  
+  # positions are only valid after the first 1000 lowest variances. 
+  # This is necessary as sometimes the first ones have a quite high predicted slope. 
+  valid_cutoff_positions <- slope_above_cutoff[slope_above_cutoff > 1000]
+  cutOff <- min(valid_cutoff_positions) / nrow(ranked_dat)
+  
+  cutOff_FDR <- ranked_dat %>%
+    filter(fdr_rank == cutOff) %>% 
+    pull(fdr)
+  
+  
+  plt <- ranked_dat %>%
+    ggplot(aes(x = fdr_rank, y = norm_fdr)) +
+    geom_point(alpha = 0.45, size = 0.7) +
+    geom_point(
+      data = ranked_dat %>% filter(fdr_rank >= cutOff),
+      color = "red",
+      alpha = 0.65,
+      size = 0.8
+    ) +
+    geom_vline(xintercept = cutOff, linetype = "dashed") +
+    theme_classic() +
+    labs(
+      x = "normalized rank",
+      y = "normalized score",
+      subtitle = paste0(
+        "Cutoff score = ", ifelse(shift,signif(cutOff_FDR, 5),signif(10^(-cutOff_FDR), 5))
+      )
+    ) +
+    ggpubr::labs_pubr() +
+    ggpubr::border()
+  
+  if (plot_cutoff) {
+    print(plt)
+  }
+  
+  details <- list(
+    cutOff_FDR = cutOff_FDR,
+    cutOff_rank = cutOff,
+    plot = plt
+  )
+  
+  if (return_details) {
+    return(details)
+  }
+  
+  cutOff_FDR
+}
+```
+
+```{r}
+fuzzyorOcc <- function(df, colname="smt_diff_fdr_adj"){
+  df %>%
+  mutate(fdr = -log10(pmax(.[[colname]], .Machine$double.xmin)))  %>%
+  arrange(fdr) %>% filter(!is.na(fdr)) %>%
+  mutate(fdr_rank = 1:dplyr::n(),
+         fdr_rank = fdr_rank/max(fdr_rank,na.rm = T),
+         norm_fdr = fdr/max(fdr,na.rm = T))
+}
+
+out_dir <- "final_results_snfl2"
+dir.create(out_dir)
+```
+Calculate occupancy
+```{r}
+occupancy <- lapply(list(nucs_i0,nucs_i24), function(x){
+  res <- fuzzyorOcc(x,colname = "smt_diff_fdr_adj") %>%  get_high_var_nucs( slope_at_cutoff = 1, plot_cutoff = TRUE, return_details = T)
+  outTable <- fuzzyorOcc(x,colname = "smt_diff_fdr_adj") %>% 
+  mutate(highOccFDR = dplyr::if_else((fdr >= res$cutOff_FDR), TRUE, FALSE)) %>% 
+  dplyr::select(c("seqnames", "start", "end", "width", "strand", "center",
+                  "control_smt_loca", "treat_smt_loca", "control_smt_val",
+                  "treat_smt_val", "smt_log2FC", "smt_diff_log10pval", 
+                  "smt_diff_FDR", "control_fuzziness_score", "ID", # control_fuzziness_score is included to filter for well positioned nucleosomes
+                  "smt_diff_fdr_adj", "fdr","fdr_rank", "norm_fdr", "highOccFDR"))
+  
+  bed <-   outTable %>% 
+    mutate(name = ID, score = smt_diff_fdr_adj) %>% 
+  filter(highOccFDR) %>% 
+  as_granges()
+  
+  return(list(cutoff=res, result=outTable, bed=bed))
+}) %>% setNames(c("i0","i24"))
+```
+Calculate fuzziness
+```{r}
+fuzziness <- lapply(list(nucs_i0,nucs_i24), function(x){
+  res <- fuzzyorOcc(x,colname = "fuzziness_diff_fdr_adj") %>%  get_high_var_nucs( slope_at_cutoff = 1, plot_cutoff = TRUE, return_details = T)
+  outTable <- fuzzyorOcc(x,colname = "fuzziness_diff_fdr_adj") %>% 
+  mutate(highFuzzFDR = dplyr::if_else((fdr >= res$cutOff_FDR), TRUE, FALSE)) %>% 
+ dplyr::select(c("seqnames", "start", "end", "width", "strand", "center",
+                  "control_fuzziness_score", "treat_fuzziness_score",
+                  "fuzziness_log2FC", "fuzziness_diff_log10pval",
+                  "fuzziness_diff_FDR", "ID", "fuzziness_diff_fdr_adj", "fdr",
+                  "fdr_rank", "norm_fdr", "highFuzzFDR"))
+  
+  bed <-   outTable %>% 
+    mutate(name = ID, score = fuzziness_diff_fdr_adj) %>% 
+  filter(highFuzzFDR) %>% 
+  as_granges()
+  
+  return(list(cutoff=res, result=outTable, bed=bed))
+}) %>% setNames(c("i0","i24"))
+```
+calculate shift
+
+```{r}
+shift <- lapply(list(nucs_i0,nucs_i24), function(x){
+  res <- x %>% filter(!is.na(treat2control_dis_adj)) %>%
+    mutate(fdr = (treat2control_dis_adj)) %>% # using nucleosome distance as substitute for significance value
+    arrange(fdr) %>% 
+    mutate(fdr_rank = 1:dplyr::n(),
+           fdr_rank = fdr_rank/max(fdr_rank,na.rm = T),
+           norm_fdr = fdr/max(fdr,na.rm = T)) %>%  
+    get_high_var_nucs( slope_at_cutoff = 1, plot_cutoff = TRUE, return_details = T, shift = TRUE)
+  
+  outTable <- x %>% filter(!is.na(treat2control_dis_adj)) %>%
+    mutate(fdr = (treat2control_dis_adj)) %>% # using nucleosome distance as substitute for significance value
+    arrange(fdr) %>% 
+    mutate(fdr_rank = 1:dplyr::n(),
+           fdr_rank = fdr_rank/max(fdr_rank,na.rm = T),
+           norm_fdr = fdr/max(fdr,na.rm = T)) %>% 
+  mutate(highShiftFDR = dplyr::if_else((fdr >= res$cutOff_FDR), TRUE, FALSE)) %>% 
+  dplyr::select(c("seqnames", "start", "end", "width", "strand", "center",
+                  "control_smt_loca", "treat_smt_loca", "treat2control_dis",
+                  "treat_smt_loca_smooth", "control_smt_loca_smooth", 
+                  "treat2control_dis_adj", "control_fuzziness_score", "ID", # control_fuzziness_score is included to filter for well positioned nucleosomes
+                  "fdr","fdr_rank", "norm_fdr", "highShiftFDR"))
+  
+  bed <-   outTable %>% 
+    mutate(name = ID, score = treat2control_dis_adj) %>% 
+  filter(highShiftFDR) %>% 
+  as_granges()
+  
+  return(list(cutoff=res, result=outTable, bed=bed))
+}) %>% setNames(c("i0","i24"))
+
+```
+Saving results
+
+```{r}
+rio::export(
+  list(
+    occupancy = occupancy$i24$result,
+    fuzziness = fuzziness$i24$result,
+    shift = shift$i24$result
+  ),
+  file = file.path(out_dir, "i24_results.xlsx")
+)
+
+## in article authors used i24 FDR cutoffs on i0 samples because nucleosome occupancy changes are more proound in i24 samples and are more stringent
+occupancy$i0$cutoff$cutOff_FDR<occupancy$i24$cutoff$cutOff_FDR
+fuzziness$i0$cutoff$cutOff_FDR<fuzziness$i24$cutoff$cutOff_FDR
+shift$i0$cutoff$cutOff_FDR<shift$i24$cutoff$cutOff_FDR
+
+rio::export(
+  list(
+    occupancy = occupancy$i0$result %>% mutate(highOccFDR = if_else((fdr >= occupancy$i24$cutoff$cutOff_FDR ), TRUE, FALSE)),
+    fuzziness = fuzziness$i0$result %>% mutate(highFuzzFDR = if_else((fdr >= fuzziness$i24$cutoff$cutOff_FDR ), TRUE, FALSE)),
+    shift = shift$i0$result %>% mutate(highShiftFDR = if_else((fdr >= shift$i24$cutoff$cutOff_FDR ), TRUE, FALSE))
+  ),
+  file = file.path(out_dir, "i0_results.xlsx")
+)
+```
+
+writing the bed files
+
+```{r}
+occupancy$i24$bed %>% write_bed(file = paste0(out_dir,"/i24Occ.bed"))
+fuzziness$i24$bed %>% write_bed(file = paste0(out_dir,"/i24Fuzz.bed"))
+shift$i24$bed %>% write_bed(file = paste0(out_dir,"/i24Shift.bed"))
+
+occupancy$i0$result %>% mutate(highOccFDR = if_else((fdr >= occupancy$i24$cutoff$cutOff_FDR ), TRUE, FALSE)) %>% 
+  mutate(name = ID, score = smt_diff_fdr_adj) %>% filter(highOccFDR) %>% as_granges() %>% write_bed(file = paste0(out_dir,"/i0Occ.bed"))
+
+fuzziness$i0$result %>% mutate(highFuzzFDR = if_else((fdr >= fuzziness$i24$cutoff$cutOff_FDR ), TRUE, FALSE)) %>%
+ mutate(name = ID, score = fuzziness_diff_fdr_adj) %>% filter(highFuzzFDR) %>% as_granges() %>% write_bed(file = paste0(out_dir,"/i0Fuzz.bed"))
+
+shift$i0$result %>% mutate(highShiftFDR = if_else((fdr >= shift$i24$cutoff$cutOff_FDR ), TRUE, FALSE)) %>% 
+  mutate(name = ID, score = treat2control_dis_adj) %>% filter(highShiftFDR) %>% as_granges() %>% write_bed(file = paste0(out_dir,"/i0Shift.bed"))
+```

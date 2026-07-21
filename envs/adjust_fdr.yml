@@ -1,0 +1,14 @@
+name: bioc312
+
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+
+dependencies:
+  - r-base=4.0.5
+  - bioconductor-plyranges=1.10.0
+  - bioconductor-rtracklayer=1.50.0
+  - r-fs=1.5.0
+  - r-argparser=0.7.1
+  - r-tidyverse=1.3.0

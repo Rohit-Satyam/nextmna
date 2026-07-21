@@ -1,0 +1,9 @@
+Run prepacked workflow scripts (Experimental)
+
+Usage: (runNuclDyn | docker -v /data/dir/:/data/dir) run  [WF_file_path]
+
+Parameters:
+WF_file
+  Executable bash script containing a series of Nucleosome Dynamics calls. Non Nucleosome Dynamics commands will be ignored.
+
+

@@ -1,0 +1,5 @@
+Samples,R1,R2,Condition,Replicate
+iKO_Rep1,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/iKO_i24_69hpi_Rep1_MNase_1.fastq.gz,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/iKO_i24_69hpi_Rep1_MNase_2.fastq.gz,iKO_24hr,Rep1
+iKO_Rep2,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/iKO_i24_69hpi_Rep2_MNase_1.fastq.gz,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/iKO_i24_69hpi_Rep2_MNase_2.fastq.gz,iKO_24hr,Rep2
+noKO_Rep1,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/noKO_i24_69hpi_Rep1_MNase_1.fastq.gz,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/noKO_i24_69hpi_Rep1_MNase_2.fastq.gz,noKO_24hr,Rep1
+noKO_Rep2,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/noKO_i24_69hpi_Rep2_MNase_1.fastq.gz,/home/subudhak/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/data/reads/noKO_i24_69hpi_Rep2_MNase_2.fastq.gz,noKO_24hr,Rep2
