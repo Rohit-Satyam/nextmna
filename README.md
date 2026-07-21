@@ -1,11 +1,13 @@
-# Watzlowik et al. 2023 MNase-seq — Nextflow DSL2
+# nextmna: Nextflow workflow for differential nucleosome dynamics analysis
 
-This is a modular DSL2 conversion of `MNase-Seq/Snakefile` from the uploaded Watzlowik et al. repository. Every executable workflow step is defined in its own `modules/*.nf` file. All R scripts from the authors' `1_code` tree are placed in `bin/`; DANPOS3 is expected at `bin/DANPOS3/danpos.py`. Only `AdjustFDR.R` is part of the main Snakemake-derived DAG; the other R scripts remain optional downstream utilities.
+> Note: This pipeline is under active development.
+
+This is a modular DSL2 pipeline made using inspiration from `Watzlowik_et_al_2023` code available [here](https://github.com/SimHolz/Watzlowik_et_al_2023) to reproduce their analysis and reuse it for in-house data analysis since snakemake pipeline needed update. Every executable workflow step is defined in its own `modules/*.nf` file. All R scripts from the authors' `1_code` tree are placed in `bin/`; DANPOS3 is expected at `bin/DANPOS3/danpos.py`. Only `AdjustFDR.R` is part of the main Snakemake-derived DAG; the other R scripts remain optional downstream utilities. This pipeline is tested using `Nextflow version 26.04.6` and might throw error related to syntax for versions `< 25`. The docker image required by the workflow can be found at https://zenodo.org/records/21476365.
 
 ## Workflow
 
 1. FastQC on raw R1/R2 reads
-2. Paired-end adapter trimming with Skewer
+2. Paired-end adapter trimming with Fastp
 3. Bowtie2 reference indexing
 4. Bowtie2 alignment
 5. SAM-to-BAM conversion, sorting and indexing
@@ -14,8 +16,9 @@ This is a modular DSL2 conversion of `MNase-Seq/Snakefile` from the uploaded Wat
 8. Sorting/indexing of filtered BAMs
 9. Qualimap and MultiQC on filtered BAMs
 10. Condition-aware staging of filtered BAMs
-11. DANPOS3 `dpos` differential nucleosome analysis
+11. DANPOS3 `dpos` differential nucleosome analysis. We are not using the latest DANPOS which is being actively maintained [here](https://github.com/boenc28-cmyk/DANPOS) because we observed some discrepencies and therefore we continue to use the code being used by [everyone](https://github.com/sklasfeld/DANPOS3). 
 12. Adjusted-FDR calculation with the authors' `AdjustFDR.R`
+13. Nucleosome dynamics using `nucleR` and `NucDyn`
 
 ## Required samplesheet
 
@@ -68,84 +71,95 @@ The left side is treated as the DANPOS sample/treatment and the right side as th
 
 ## Installation
 
-Install Nextflow, Java 17+ and Mamba/Conda. Then install DANPOS3 into the required `bin` location:
+Install Nextflow, Java 17+ and Mamba/Conda. The dependencies for each modules are handled by their private `.yml` files. DANPOS3 code is included in this repository
 
 ```bash
-chmod +x scripts/*.sh bin/*.R
-./scripts/install_danpos3.sh
+conda install conda-forge::mamba
+mamba create -n nextmna bioconda::nextflow==26.04.6
 ```
-
-The source archive itself did not contain DANPOS3; its original preparation script cloned the official repository.
 
 ## Run
 
 ```bash
-nextflow run main.nf \
-  -profile conda \
-  --input assets/samplesheet.tsv \
-  --reference /path/to/PlasmoDB-52_Pfalciparum3D7_Genome.fasta \
-  --annotation /path/to/PlasmoDB-52_Pfalciparum3D7.gff \
-  --chrom_sizes /path/to/sizes.genome \
-  --danpos_comparison 'iKO_24h:noKO_24h' \
-  --outdir results
+nextflow run main.nf --input natcom_24hpi.csv \
+--outdir 24hpi_results_v52 --danpos_comparison="24hpi_iKO:24hpi_noKO" \
+--nucdyn_comparison="24hpi_iKO:24hpi_noKO" --nucdyn_contrast_name="24h" -with-conda \
+--nucdyn_expected_replicates=2 -resume -w work_24hpi --reference="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/PlasmoDB-52_Pfalciparum3D7_Genome.fasta" \
+--annotation="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/PlasmoDB-52_Pfalciparum3D7.gff" \
+--nucdyn_annotation="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/pf_nucDyn_v52.gff"
 ```
 
 Resume an interrupted run with `-resume`.
 
 ## Test reads from the uploaded repository
 
-The eight small paired-end FASTQ files are retained under `test_data/reads/`, with a matching `assets/test_samplesheet.tsv`. Reference files are not present in the uploaded archive. They can be prepared using:
+The eight small paired-end FASTQ files are retained under `data/reads/`, with a matching `assets/samplesheet.tsv`. Reference files are not present in the uploaded archive. User need to provide the reference fasta and GFF file. A separate GFF file is required for nucleodynamics step called `pf_nucDyn.gff` containing `tss` and `tts` information. This can be produced using code below. 
 
-```bash
-./scripts/prepare_plasmodb52_reference.sh
-```
+```r
+library(tidyverse)
+library(plyranges)
 
-Then run:
+inGFF <- read_gff(file = "PlasmoDB-52_Pfalciparum3D7.gff")
 
-```bash
-nextflow run main.nf -profile conda \
-  --input assets/test_samplesheet.tsv \
-  --reference reference/plasmoDB52/PlasmoDB-52_Pfalciparum3D7_Genome.fasta \
-  --annotation reference/plasmoDB52/PlasmoDB-52_Pfalciparum3D7.gff \
-  --chrom_sizes reference/plasmoDB52/sizes.genome \
-  --danpos_comparison 'iKO_24h:noKO_24h' \
-  --outdir test_results
+inGFF %>% 
+  filter(type %in% c("protein_coding_gene", "pseudogene", "ncRNA_gene")) %>% 
+  mutate(tss = ifelse(strand == "+", start,end),
+         tts = ifelse(strand == "+", end,start),
+		 name = ID) %>% 
+  write_gff3(file = "pf_nucDyn_v52.gff")
 ```
 
 ## Main output
 
 ```text
-results/
-├── 00_index/bowtie2/
-├── 00_logs/
-├── 00_qc/
-│   ├── preprocessing/raw_fastqc/
-│   ├── mapping/{qualimap,multiqc}/
-│   ├── filtered/{deeptools_alignmentSieve,qualimap,multiqc}/
-│   └── nucleosome_positioning/{danpos.log,adjustFDR.log}
-├── 01_trimmed_reads/
-├── 02_alignment/sort/
-├── 03_alignment_filtered/bam/
-└── 04_differential_nucleosome_positioning/
-    ├── <treatment>/
-    ├── <control>/
-    └── results/
-        ├── pooled/
-        ├── diff/
-        ├── <treatment>-<control>.positions.integrative.xls
-        └── adjustedFDR/
-            └── <treatment>-<control>.positions.FDR_corrected.xls
+── 00_index
+│   └── bowtie2
+├── 00_logs
+│   ├── bowtie2
+│   ├── bowtie2_index
+│   ├── deeptools_alignmentSieve
+│   ├── fastqc
+│   ├── qualimap
+│   └── qualimap_filtered
+├── 00_qc
+│   ├── fastp
+│   ├── filtered
+│   ├── mapping
+│   ├── nucleosome_positioning
+│   └── preprocessing
+├── 01_trimmed_reads
+│   ├── PfSnf2L-0hpi_iKO_Rep1-trimmed-pair1.fastq.gz
+│   ├── PfSnf2L-0hpi_iKO_Rep1-trimmed-pair2.fastq.gz
+│   ├── PfSnf2L-0hpi_iKO_Rep2-trimmed-pair1.fastq.gz
+│   ├── PfSnf2L-0hpi_iKO_Rep2-trimmed-pair2.fastq.gz
+│   ├── PfSnf2L-0hpi_iKO_Rep3-trimmed-pair1.fastq.gz
+│   ├── PfSnf2L-0hpi_iKO_Rep3-trimmed-pair2.fastq.gz
+│   ├── PfSnf2L-0hpi_noKO_Rep1-trimmed-pair1.fastq.gz
+│   ├── PfSnf2L-0hpi_noKO_Rep1-trimmed-pair2.fastq.gz
+│   ├── PfSnf2L-0hpi_noKO_Rep2-trimmed-pair1.fastq.gz
+│   ├── PfSnf2L-0hpi_noKO_Rep2-trimmed-pair2.fastq.gz
+│   ├── PfSnf2L-0hpi_noKO_Rep3-trimmed-pair1.fastq.gz
+│   └── PfSnf2L-0hpi_noKO_Rep3-trimmed-pair2.fastq.gz
+├── 02_alignment
+│   └── sort
+├── 03_alignment_filtered
+│   └── bam
+├── 04_differential_nucleosome_positioning
+│   ├── 0hpi_iKO
+│   ├── 0hpi_noKO
+│   └── results
+├── NucleosomeDynamics
+│   ├── bam
+│   ├── NucDyn
+│   ├── nucleR
+│   ├── RData
+│   ├── statistics
+│   └── txstart
+├── pipeline_dag.html
+├── pipeline_report.html
+├── pipeline_timeline.html
+└── pipeline_trace.txt
 ```
-
-## Static validation
-
-Run the bundled integrity checker after unpacking:
-
-```bash
-python scripts/validate_conversion.py
-```
-
-When the original source zip is available, byte-level checks of the author R scripts and the source rule count can also be run with `--source-zip /path/to/archive.zip`. The generated `VALIDATION_REPORT.txt` records the checks performed for this delivered archive.
 
 ## Parameter overrides
 
@@ -159,4 +173,12 @@ Other configurable defaults are in `nextflow.config`, including adapters, fragme
 
 ## Optional author analysis code
 
-The original R utilities `find_dynamic_nucleosomes.R` and `get_nucleosomeDynamics_gff.R` are in `bin/`, as requested, but are not invoked by the main workflow because they were not Snakemake rules and contain analysis-specific assumptions. The manuscript R Markdown and Docker-based nucleosomeDynamics helpers are retained under `extras/`.
+The original R utilities `find_dynamic_nucleosomes.R` has been modified and is available in `assets/filter_nucleosomedynamics_results.Rmd`. The manuscript R Markdown and Docker-based nucleosomeDynamics helpers are retained under `extras/` in case user wishes to build docker image him/herself.
+
+## Citations
+
+We borrow most of the code from the following article.
+
+```
+Watzlowik, M.T., Silberhorn, E., Das, S., Singhal, R., Venugopal, K., Holzinger, S., Stokes, B., Schadt, E., Sollelis, L., Bonnell, V.A. and Gow, M., 2025. Plasmodium blood stage development requires the chromatin remodeller Snf2L. Nature, 639(8056), pp.1069-1075.
+```
