@@ -81,12 +81,19 @@ mamba create -n nextmna bioconda::nextflow==26.04.6
 ## Run
 
 ```bash
-nextflow run main.nf --input natcom_24hpi.csv \
---outdir 24hpi_results_v52 --danpos_comparison="24hpi_iKO:24hpi_noKO" \
---nucdyn_comparison="24hpi_iKO:24hpi_noKO" --nucdyn_contrast_name="24h" -with-conda \
---nucdyn_expected_replicates=2 -resume -w work_24hpi --reference="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/PlasmoDB-52_Pfalciparum3D7_Genome.fasta" \
---annotation="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/PlasmoDB-52_Pfalciparum3D7.gff" \
---nucdyn_annotation="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/pf_nucDyn_v52.gff"
+nextflow run main.nf \
+--input di_18hpi.csv \
+--outdir 18hpi_results \
+--danpos_comparison='RAPA_18hpi:DMSO_18hpi' \
+--nucdyn_comparison='RAPA_18hpi:DMSO_18hpi' \
+--nucdyn_contrast_name=18hpi \
+-with-conda \
+--nucdyn_expected_replicates=3 \
+-w work_18hpi \
+--fastp_ext='--detect_adapter_for_pe --correction --adapter_fasta ./resources/adapters/TruSeq3-PE.fa' \
+--danpos_extra='-m 1 -c 23332839 --extend 70 -a 1 -z 20 -jd 75 -jw 10 -e 1' \
+--annotation="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/PlasmoDB-68_Pfalciparum3D7.gff" \
+--nucdyn_annotation="/data/di_mnaseq/Watzlowik_et_al_2023/nextmna/resources/pf_nucDyn_v68.gff"
 ```
 
 Resume an interrupted run with `-resume`.
